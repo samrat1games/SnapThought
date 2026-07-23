@@ -1,0 +1,14 @@
+.notifications-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.mark-all-read-btn {
+  font-size: 14px;
+  color: var(--accent);
+  padding: 4px 12px;
+  border-radius: 9999px;
+}
+.mark-all-read-btn:hover {
+  background: var(--accent-bg);
+}

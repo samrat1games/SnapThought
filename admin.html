@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnapThought Admin</title>
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <style>
+    body { background: var(--bg-secondary); }
+    .admin-wrap { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
+    .admin-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .admin-top h1 { font-size: 24px; font-weight: 800; }
+    .admin-card { background: var(--bg-primary); border-radius: 16px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border-color); }
+    .user-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+    .user-row:last-child { border-bottom: none; }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .user-handle { font-size: 13px; color: var(--text-secondary); }
+    .badge-img { height: 16px; vertical-align: middle; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .actions button { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+    .search-box { margin-bottom: 16px; }
+    .not-admin { text-align: center; padding: 80px 24px; }
+    .not-admin h2 { margin-bottom: 12px; }
+    .not-admin p { color: var(--text-secondary); margin-bottom: 20px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat-card { text-align: center; padding: 16px; background: var(--bg-secondary); border-radius: 12px; }
+    .stat-num { font-size: 24px; font-weight: 800; color: var(--accent); }
+    .stat-label { font-size: 11px; color: var(--text-secondary); }
+    .role-select { padding: 4px 8px; border-radius: 6px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); font-size: 12px; }
+    .admin-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .admin-tab { padding: 10px 20px; border-radius: 9999px; font-weight: 600; cursor: pointer; background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border-color); transition: all 0.2s; }
+    .admin-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .question-card { background: var(--bg-primary); border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid var(--border-color); }
+    .question-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .question-subject { font-weight: 700; font-size: 15px; }
+    .question-status { padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    .question-status.open { background: rgba(29,155,240,0.15); color: var(--accent); }
+    .question-status.closed { background: rgba(0,186,124,0.15); color: var(--success); }
+    .question-meta { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+    .question-message { font-size: 14px; margin-bottom: 12px; line-height: 1.5; }
+    .reply-item { padding: 8px 12px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
+    .reply-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+    .reply-input { display: flex; gap: 8px; margin-top: 8px; }
+    .reply-input input { flex: 1; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const SUPABASE_URL = 'https://ttglprrkuwsnfinodzfh.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0Z2xwcnJrdXdzbmZpbm9kemZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMjQ2OTYsImV4cCI6MjA5OTcwMDY5Nn0.c665QX1r0_3XpOUWlG7m3ytGJLUZ6h1LXSx3pcmcc48';
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let me = null;
+    let users = [];
+    let questions = [];
+    let currentTab = 'users';
+
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) { showMsg('Please log in first', '/#/'); return; }
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+      if (!profile) { showMsg('Profile not found', '/#/'); return; }
+      if (!profile.is_admin && profile.role !== 'mod' && profile.role !== 'mod+') {
+        document.getElementById('app').innerHTML = '<div class="not-admin"><h2>Access Denied</h2><p>Only developers and moderators can access this panel.</p><a href="/#/" class="btn btn-primary">Go Back</a></div>';
+        return;
+      }
+      me = profile;
+      loadPanel();
+    }
+
+    function showMsg(msg, href) {
+      document.getElementById('app').innerHTML = '<div class="not-admin"><h2>' + msg + '</h2><a href="' + href + '" class="btn btn-primary">Go</a></div>';
+    }
+
+    async function loadPanel() {
+      users = await loadUsers();
+      questions = await loadQuestions();
+      const stats = {
+        total: users.length,
+        verified: users.filter(u => u.is_verified).length,
+        devs: users.filter(u => u.is_admin).length,
+        mods: users.filter(u => u.role === 'mod' || u.role === 'mod+').length,
+        banned: users.filter(u => u.is_banned).length,
+        openQ: questions.filter(q => q.status === 'open').length,
+      };
+
+      document.getElementById('app').innerHTML = `
+        <div class="admin-wrap">
+          <div class="admin-top">
+            <h1>Admin Panel</h1>
+            <div style="display:flex;gap:8px;align-items:center">
+              <img src="icons/text-logo.png?v=1.6.0" style="height:28px">
+              <a href="/#/" class="btn btn-outline btn-sm">Back to App</a>
+            </div>
+          </div>
+          <div class="admin-tabs">
+            <div class="admin-tab active" data-tab="users">Users (${stats.total})</div>
+            <div class="admin-tab" data-tab="questions">Questions (${stats.openQ} open)</div>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-num">${stats.total}</div><div class="stat-label">Users</div></div>
+            <div class="stat-card"><div class="stat-num">${stats.devs}</div><div class="stat-label">Devs</div></div>
+            <div class="stat-card"><div class="stat-num">${stats.mods}</div><div class="stat-label">Mods</div></div>
+            <div class="stat-card"><div class="stat-num">${stats.verified}</div><div class="stat-label">Verified</div></div>
+            <div class="stat-card"><div class="stat-num">${stats.banned}</div><div class="stat-label">Banned</div></div>
+          </div>
+          <div id="tab-content"></div>
+        </div>`;
+
+      document.querySelectorAll('.admin-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          currentTab = tab.dataset.tab;
+          renderTab();
+        });
+      });
+
+      renderTab();
+    }
+
+    function renderTab() {
+      const content = document.getElementById('tab-content');
+      if (currentTab === 'users') renderUsersTab(content);
+      else if (currentTab === 'questions') renderQuestionsTab(content);
+    }
+
+    // ========== USERS TAB ==========
+    function renderUsersTab(container) {
+      container.innerHTML = `
+        <div class="admin-card">
+          <input type="text" class="input" id="search" placeholder="Search users..." style="margin-bottom:16px">
+          <div id="user-list"></div>
+        </div>`;
+      renderUsersList(users);
+      document.getElementById('search').addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase();
+        renderUsersList(q ? users.filter(u => u.username.toLowerCase().includes(q) || u.display_name.toLowerCase().includes(q)) : users);
+      });
+    }
+
+    async function loadUsers() {
+      const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+      return data || [];
+    }
+
+    function getBadges(u) {
+      const b = [];
+      if (u.is_admin) b.push('<img src="icons/admin.png" class="badge-img" title="Developer">');
+      else if (u.role === 'mod+') b.push('<img src="icons/moderator-plus.png" class="badge-img" title="Moderator+">');
+      else if (u.role === 'mod') b.push('<img src="icons/moderator.png" class="badge-img" title="Moderator">');
+      if (u.is_verified) b.push('<img src="icons/verify.png" class="badge-img" title="Verified">');
+      if (u.is_best) b.push('<img src="icons/best.png" class="badge-img" title="Best">');
+      return b.join('');
+    }
+
+    function renderUsersList(list) {
+      const el = document.getElementById('user-list');
+      if (!list.length) { el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-secondary)">No users found</div>'; return; }
+      el.innerHTML = '';
+      for (const u of list) {
+        const row = document.createElement('div');
+        row.className = 'user-row';
+        const isSelf = me && u.id === me.id;
+        row.innerHTML = `
+          <img src="${u.avatar_url || ''}" style="width:40px;height:40px;border-radius:50%;background:var(--bg-tertiary);object-fit:cover" onerror="this.style.display='none'">
+          <div class="user-info">
+            <div class="user-name">${esc(u.display_name)} ${getBadges(u)}</div>
+            <div class="user-handle">@${esc(u.username)}${u.is_banned ? ' <span style="color:var(--danger)">(Banned)</span>' : ''}</div>
+          </div>
+          <div class="actions">
+            ${!isSelf ? `
+              <select class="role-select" onchange="setRole('${u.id}', this.value)">
+                <option value="user" ${u.role==='user'&&!u.is_admin?'selected':''}>User</option>
+                <option value="mod" ${u.role==='mod'?'selected':''}>Mod</option>
+                <option value="mod+" ${u.role==='mod+'?'selected':''}>Mod+</option>
+              </select>
+              <button class="btn ${u.is_verified?'btn-outline':'btn-primary'} btn-sm" onclick="toggle('verify','${u.id}',${u.is_verified})">${u.is_verified?'Unverify':'Verify'}</button>
+              <button class="btn btn-sm" style="${u.is_best?'border-color:#ffd400;color:#ffd400':'background:#ffd400;color:#000'}" onclick="toggle('best','${u.id}',${u.is_best})">${u.is_best?'Unbest':'Best'}</button>
+              <button class="btn btn-sm" style="${u.is_admin?'border-color:var(--danger);color:var(--danger)':'background:#ffd400;color:#000'}" onclick="toggle('dev','${u.id}',${u.is_admin})">${u.is_admin?'Rem Dev':'Make Dev'}</button>
+              <button class="btn btn-sm" style="${u.is_banned?'border-color:var(--text-secondary)':'background:var(--danger);color:#fff'}" onclick="toggle('ban','${u.id}',${u.is_banned})">${u.is_banned?'Unban':'Ban'}</button>
+            ` : '<span style="color:var(--text-tertiary);font-size:12px">You</span>'}
+          </div>`;
+        el.appendChild(row);
+      }
+    }
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    window.toggle = async function(type, id, current) {
+      if (type === 'ban' && !current && !confirm('Ban this user?')) return;
+      if (type === 'dev' && !current && !confirm('Make this user a Developer?')) return;
+      const updates = {};
+      if (type === 'verify') updates.is_verified = !current;
+      if (type === 'best') updates.is_best = !current;
+      if (type === 'dev') { updates.is_admin = !current; if (!current) updates.role = 'user'; }
+      if (type === 'ban') updates.is_banned = !current;
+      await supabase.from('profiles').update(updates).eq('id', id);
+      users = await loadUsers();
+      renderTab();
+    };
+
+    window.setRole = async function(id, role) {
+      await supabase.from('profiles').update({ role }).eq('id', id);
+      users = await loadUsers();
+      renderTab();
+    };
+
+    // ========== QUESTIONS TAB ==========
+    async function loadQuestions() {
+      const { data } = await supabase.from('questions').select('*, profiles:user_id(username, display_name, avatar_url)').order('created_at', { ascending: false });
+      return data || [];
+    }
+
+    function renderQuestionsTab(container) {
+      container.innerHTML = '<div id="questions-list"></div>';
+      renderQuestionsList();
+    }
+
+    async function renderQuestionsList() {
+      questions = await loadQuestions();
+      const list = document.getElementById('questions-list');
+      if (!questions.length) {
+        list.innerHTML = '<div class="admin-card" style="text-align:center;color:var(--text-secondary)">No questions yet</div>';
+        return;
+      }
+      list.innerHTML = '';
+      for (const q of questions) {
+        const card = document.createElement('div');
+        card.className = 'question-card';
+        const profile = q.profiles;
+        card.innerHTML = `
+          <div class="question-header">
+            <div class="question-subject">${esc(q.subject || 'No subject')}</div>
+            <span class="question-status ${q.status}">${q.status}</span>
+          </div>
+          <div class="question-meta">
+            From: ${esc(profile?.display_name || '?')} (@${esc(profile?.username || '?')}) - ${new Date(q.created_at).toLocaleString()}
+          </div>
+          <div class="question-message">${esc(q.message)}</div>
+          <div id="replies-${q.id}"></div>
+          <div class="reply-input">
+            <input type="text" class="input" id="reply-input-${q.id}" placeholder="Write a reply...">
+            <button class="btn btn-primary btn-sm" onclick="sendReply('${q.id}')">Reply</button>
+            ${q.status === 'open' ? `<button class="btn btn-outline btn-sm" onclick="closeQuestion('${q.id}')">Close</button>` : `<button class="btn btn-outline btn-sm" onclick="reopenQuestion('${q.id}')">Reopen</button>`}
+          </div>`;
+        list.appendChild(card);
+        loadReplies(q.id);
+      }
+    }
+
+    async function loadReplies(questionId) {
+      const { data: replies } = await supabase.from('question_replies').select('*, profiles:user_id(username, display_name, avatar_url)').eq('question_id', questionId).order('created_at', { ascending: true });
+      const container = document.getElementById('replies-' + questionId);
+      if (!container || !replies) return;
+      container.innerHTML = '';
+      for (const r of replies) {
+        const profile = r.profiles;
+        const div = document.createElement('div');
+        div.className = 'reply-item';
+        div.innerHTML = `<strong>${esc(profile?.display_name || '?')}</strong>: ${esc(r.message)}<div class="reply-meta">${new Date(r.created_at).toLocaleString()}</div>`;
+        container.appendChild(div);
+      }
+    }
+
+    window.sendReply = async function(questionId) {
+      const input = document.getElementById('reply-input-' + questionId);
+      const message = input.value.trim();
+      if (!message) return;
+      await supabase.from('question_replies').insert({ question_id: questionId, user_id: me.id, message });
+      input.value = '';
+      loadReplies(questionId);
+    };
+
+    window.closeQuestion = async function(id) {
+      await supabase.from('questions').update({ status: 'closed' }).eq('id', id);
+      renderQuestionsList();
+    };
+
+    window.reopenQuestion = async function(id) {
+      await supabase.from('questions').update({ status: 'open' }).eq('id', id);
+      renderQuestionsList();
+    };
+
+    init();
+  </script>
+</body>
+</html>
